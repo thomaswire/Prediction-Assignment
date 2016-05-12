@@ -1,0 +1,145 @@
+---
+title: "Predictive Model for Exercise Manner"
+author: "Thomas Wire"
+date: "May 9, 2016"
+output: html_document
+---
+
+#Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this analysis, data is used from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Data-set). 
+
+#Data 
+
+The training data used for this analysis are available here: 
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+The data for this analysis come from this source: <http://groupware.les.inf.puc-rio.br/har>. 
+
+#Goal
+
+The goal of the analysis is to predict the manner in which participants did the exercise. This is the "classe" variable in the training set. This report describes:
+
+* How the model was built
+* How cross validation was used
+* The expected out-of-sample-error
+* The reasoning behind choices in the study
+
+#Study Design
+
+A final test data-set of 20 observations was set aside.
+
+The following approach was taken to perform cross validation: 
+
+1. A training data-set of 19,622 observations was used
+2. The training data-set was split into training and test sets using random sub-sampling to allocate 75% of the data for training and 25% of the data for testing
+3. The predictive model was built on the data allocated for training
+4. The predictive model was evaluated on the data allocated for testing
+5. The process was repeated and the estimated errors were averaged
+
+#Data Retreival
+
+The following code was executed to retreive the training and test data-sets:
+
+```{r data_retreival}
+fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+if(!file.exists("trainingEx.csv")){
+  download.file(fileUrl, destfile = "trainingEx.csv")
+}
+
+trainingExData <- read.csv("trainingEx.csv")
+
+
+fileUrl <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+if(!file.exists("finalTestEx.csv")){
+  download.file(fileUrl, destfile = "finalTestEx.csv")
+}
+
+finalTestExData <- read.csv("finalTestEx.csv")
+```
+
+#Data Splitting
+
+The training dataset was split to allocate data for training and data for testing as follows:
+
+```{r data_splitting}
+library(caret); library(kernlab);
+
+set.seed(5895)
+inTrain <- createDataPartition(y=trainingExData$classe, p=0.75, list=FALSE)
+
+training <- trainingExData[inTrain,]
+testing <- trainingExData[-inTrain,]
+```
+
+#Data Cleaning
+
+Several columns in the dataset have very little data. We remove those columns where more than 95% of the observations are represented as an empty string as well as columns that are not reasonable to use for the predictive model, as follows:
+
+```{r data_cleaning}
+percentEmptyString <- colSums(training == "")/nrow(training)
+keepColumnFlag <- percentEmptyString < 0.95
+keepColumnFlag[is.na(keepColumnFlag)] <- FALSE
+keepColumnFlag[1:7] <- FALSE
+
+training <- (training[keepColumnFlag])
+
+plot(training$classe, main = "Observations by Classe", ylab = "Frequency", xlab = "Classe")
+```
+
+#Model Fitting
+
+##Plotting Predictors
+
+We explore a selection of potentional predictors using the featurePlot function in the Caret package as follow:
+
+```{r plotting_predictors}
+featurePlot(x=training[,c("gyros_forearm_x", "gyros_dumbbell_y", "gyros_dumbbell_x", "gyros_arm_z", "gyros_belt_x")], y= training$classe, plot="pairs")
+```
+
+##BayesGLM
+
+A BayesGLM was first used, as follows:
+
+```{r warning=FALSE}
+glmModelFit <- train(classe ~., data=training, method="bayesglm")
+glmModelFit
+
+glmPredictions <- predict(glmModelFit, newdata = testing)
+
+glmConfusionMatrix <- confusionMatrix(glmPredictions, testing$classe)
+
+print(paste("Out of sample error is: ",unname(round(glmConfusionMatrix$overall["Accuracy"],3))))
+```
+
+##Random Forest
+
+A RandomForest model was fitted as follows:
+
+```{r warning=FALSE}
+rfModelFit <- randomForest::randomForest(classe ~., data=training)
+rfModelFit
+
+rfPredictions <- predict(rfModelFit, newdata = testing)
+
+rfConfusionMatric <- confusionMatrix(rfPredictions, testing$classe)
+
+print(paste("Out of sample error is: ",unname(round(rfConfusionMatric$overall["Accuracy"],3))))
+```
+
+##Model Selection
+
+When testing the two models against the validation data set, the GLM model has a vastly greater out-of-sample error. The random forest model is therefore selected as the predictive model of choice.
+
+#Model Testing
+
+The model is tested against the test data set of 20 observations, which was originally set aside. This test is completed as follows:
+
+```{r model_testing}
+testPredictions <- predict(rfModelFit, newdata = finalTestExData)
+testPredictions
+```
